@@ -107,7 +107,7 @@ begin
     dbms_lob.append(L_CLOB, '|**ASK_ID**:' || rec.ASK_ID || '|' || chr(10));
     dbms_lob.append(L_CLOB,'|**ANSWER_ID**:' || rec.ANSWER_ID || '|' || chr(10));
     dbms_lob.append(L_CLOB, '|**TITLE**:' || rec.TITLE || '|' || chr(10));
-    dbms_lob.append(L_CLOB,'|**ANSWER**:' ||REGEXP_REPLACE(rec.CONTENT, chr(10), '<br/>') || '|' ||chr(10));
+    dbms_lob.append(L_CLOB,'|**ANSWER**:' ||replace(REGEXP_REPLACE(rec.CONTENT, chr(10), '<br/>'),'https://img-mid.csdnimg.cn','http://images.weserv.nl/?url=https://img-mid.csdnimg.cn') || '|' ||chr(10));
     dbms_lob.append(L_CLOB,'|**LINK**:[' || REC.URL || '](' || REC.URL || ')|' ||chr(10));
     dbms_lob.append(L_CLOB, chr(10));
   end loop;
