@@ -11,41 +11,60 @@ create table MY_ASKANDANSWER
     show number(1)
   );
 
+
 create or replace procedure MY_ASKANDANSWER_get_p is
   --DECLARE
-  L_CLOB     CLOB;
+  L_CLOB     bLOB;
   L_URL      VARCHAR2(200);
   l_username VARCHAR2(200);
   l_page     NUMBER;
   l_size     NUMBER;
+  req        UTL_HTTP.REQ;
+  resp       UTL_HTTP.RESP;
+  value      raw(32767);
 BEGIN
 
-  l_username := 'wwwwwwgame';--需要获取的用户名
-  l_page     := 1;--从第1页开始
-  l_size     := 100;--每页100条(CSDN目前限制最大100条)
+  l_username := 'wwwwwwgame';
+  l_page     := 1;
+  l_size     := 100;
 
-  L_URL := 'https://blog.csdn.net/community/home-api/v1/get-business-list?page=l_page'||chr(38)||'size=' ||
-           l_size || chr(38)||'businessType=askAnswer'||chr(38)||'noMore=false'||chr(38)||'username=' ||
-           l_username;
-           
-  delete MY_ASKANDANSWER where SOURCE = 'CSDN_ASK';--清空数据
+  L_URL := 'https://blog.csdn.net/community/home-api/v1/get-business-list?page=l_page' ||
+           chr(38) || 'size=' || l_size || chr(38) ||
+           'businessType=askAnswer' || chr(38) || 'noMore=false' || chr(38) ||
+           'username=' || l_username;
 
-  utl_http.set_wallet(path => 'file:/u02/config/wallet');--钱夹路径
-  
+  delete MY_ASKANDANSWER where SOURCE = 'CSDN_ASK'; --清空数据
+  utl_http.set_wallet(path => 'file:/u02/config/wallet'); --钱夹路径
   loop
-    L_CLOB := empty_clob();
+    L_CLOB := empty_blob();
     dbms_lob.createtemporary(L_CLOB, true);
-  dbms_output.put_line(REPLACE(L_URL, 'l_page', l_page));
-    declare
+    /*declare
       pieces utl_http.html_pieces;
     begin
       pieces := utl_http.request_pieces(REPLACE(L_URL, 'l_page', l_page));
       for i in 1 .. pieces.count loop
         dbms_lob.append(dest_lob => L_CLOB, src_lob => pieces(i));
       end loop;
-    end;
-  
-  
+    end;*/--这个分页读取是按32767字节计算,如果最后一个字符是多字节字符的一半,会导致乱码,因此改为读raw二进制数据
+    req := UTL_HTTP.BEGIN_REQUEST(REPLACE(L_URL, 'l_page', l_page),
+                                  'GET',
+                                  'HTTP/1.1');
+    utl_http.set_header(req, 'Content-Type', 'application/json');
+    resp := utl_http.get_response(req);
+    begin
+      LOOP
+        UTL_HTTP.read_raw(resp, value, 32767);
+        dbms_lob.append(dest_lob => L_CLOB, src_lob => value);
+      END LOOP;
+      utl_http.end_response(resp);
+    EXCEPTION
+      WHEN UTL_HTTP.END_OF_BODY THEN
+        UTL_HTTP.END_RESPONSE(resp);
+      WHEN OTHERS THEN
+        UTL_HTTP.END_RESPONSE(resp);
+    END;
+    utl_http.close_persistent_conns;
+    utl_tcp.close_all_connections;
     insert into MY_ASKANDANSWER
       (SOURCE,
        ASK_ID,
@@ -55,7 +74,7 @@ BEGIN
        CREATETIME,
        URL,
        CREATETIME2,
-       show )
+       show)
       select 'CSDN_ASK' SOURCE,
              REPLACE(SUBSTR(URL, 1, INSTR(URL, '?') - 1),
                      'https://ask.csdn.net/questions/') ASK_ID,
@@ -84,7 +103,6 @@ BEGIN
       DBMS_OUTPUT.put_line('超过100页,代码可能有异常,请确认没有问题后手动注销此判断');
       exit;
     end if;
-  
   end loop;
   commit;
 END;
@@ -107,7 +125,7 @@ begin
     dbms_lob.append(L_CLOB, '|**ASK_ID**:' || rec.ASK_ID || '|' || chr(10));
     dbms_lob.append(L_CLOB,'|**ANSWER_ID**:' || rec.ANSWER_ID || '|' || chr(10));
     dbms_lob.append(L_CLOB, '|**TITLE**:' || rec.TITLE || '|' || chr(10));
-    dbms_lob.append(L_CLOB,'|**ANSWER**:' ||replace(REGEXP_REPLACE(rec.CONTENT, chr(10), '<br/>'),'https://img-mid.csdnimg.cn','http://img-mid.csdnimg.cn') || '|' ||chr(10));
+    dbms_lob.append(L_CLOB,'|**ANSWER**:' ||replace(replace(REGEXP_REPLACE(rec.CONTENT, chr(10), '<br/>'),'https://img-mid.csdnimg.cn','http://img-mid.csdnimg.cn'),'||','\|\|') || '|' ||chr(10));
     dbms_lob.append(L_CLOB,'|**LINK**:[' || REC.URL || '](' || REC.URL || ')|' ||chr(10));
     dbms_lob.append(L_CLOB, chr(10));
   end loop;
